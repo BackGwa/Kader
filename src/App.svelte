@@ -99,6 +99,13 @@
     field.focus();
   }
 
+  function handleContextMenu(event: MouseEvent) {
+    const target = event.target;
+    if (!(target instanceof Element && target.closest('input[type="text"], .selectable'))) {
+      event.preventDefault();
+    }
+  }
+
   function handleWindowKeydown(event: KeyboardEvent) {
     const typing = event.target instanceof HTMLInputElement && event.target.type === "text";
     const dialogOpen = stage.kind === "video" || stage.kind === "playlist" || settingsOpen;
@@ -108,7 +115,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleWindowKeydown} />
+<svelte:window onkeydown={handleWindowKeydown} oncontextmenu={handleContextMenu} />
 
 <main>
   <header>
@@ -124,7 +131,7 @@
 
   <ul>
     {#each jobs.list as job (job.id)}
-      <JobRow {job} />
+      <JobRow {job} onfailure={(message) => (notice = message)} />
     {/each}
   </ul>
 </main>

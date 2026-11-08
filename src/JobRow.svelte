@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { Check, RotateCw, Trash2, X } from "@lucide/svelte";
-  import { cancelJob, removeJob, retryJob, type Job } from "./api";
+  import { Check, FolderOpen, RotateCw, Trash2, X } from "@lucide/svelte";
+  import { cancelJob, removeJob, retryJob, revealJob, type Job } from "./api";
   import { formatBytes, formatName } from "./format";
   import { t } from "./i18n";
   import Thumbnail from "./Thumbnail.svelte";
 
-  let { job }: { job: Job } = $props();
+  let { job, onfailure }: { job: Job; onfailure: (message: string) => void } = $props();
 
   const downloading = $derived(job.status === "downloading");
   const cancellable = $derived(job.status === "queued" || job.status === "fetching" || downloading || job.status === "processing");
@@ -23,6 +23,10 @@
     }
     return t(`status_${job.status}`);
   });
+
+  function reveal() {
+    revealJob(job.id).catch((error) => onfailure(String(error)));
+  }
 </script>
 
 <li>
@@ -59,6 +63,11 @@
       {#if cancellable}
         <button class="icon-button" title={t("cancelDownload")} aria-label={t("cancelDownload")} onclick={() => cancelJob(job.id)}>
           <X size={16} aria-hidden="true" />
+        </button>
+      {/if}
+      {#if job.status === "done"}
+        <button class="icon-button" title={t("showInFolder")} aria-label={t("showInFolder")} onclick={reveal}>
+          <FolderOpen size={16} aria-hidden="true" />
         </button>
       {/if}
       {#if removable}

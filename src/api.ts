@@ -93,6 +93,7 @@ export const enqueue = (items: NewJob[]) => invoke<void>("enqueue", { items });
 export const cancelJob = (id: number) => invoke<void>("cancel", { id });
 export const retryJob = (id: number) => invoke<void>("retry", { id });
 export const removeJob = (id: number) => invoke<void>("remove", { id });
+export const revealJob = (id: number) => invoke<void>("reveal", { id });
 export const snapshot = () => invoke<Job[]>("snapshot");
 export const getSettings = () => invoke<Settings>("get_settings");
 export const setConcurrency = (concurrency: number) => invoke<void>("set_concurrency", { concurrency });

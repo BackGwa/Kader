@@ -44,6 +44,12 @@ fn remove(app: AppHandle, id: u64) {
 }
 
 #[tauri::command]
+fn reveal(queue: State<'_, Queue>, id: u64) -> Result<(), String> {
+    let path = queue.output_path(id).ok_or("The downloaded file is unavailable")?;
+    tauri_plugin_opener::reveal_item_in_dir(path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn snapshot(queue: State<'_, Queue>) -> Vec<Job> {
     queue.snapshot()
 }
@@ -110,6 +116,7 @@ pub fn run() {
             cancel,
             retry,
             remove,
+            reveal,
             snapshot,
             get_settings,
             set_concurrency,

@@ -67,6 +67,8 @@ pub struct Job {
     error: Option<String>,
     #[serde(skip)]
     directory: PathBuf,
+    #[serde(skip)]
+    output: Option<PathBuf>,
 }
 
 impl Job {
@@ -103,6 +105,14 @@ impl Queue {
 
     pub fn snapshot(&self) -> Vec<Job> {
         self.lock().jobs.clone()
+    }
+
+    pub fn output_path(&self, id: u64) -> Option<PathBuf> {
+        self.lock()
+            .jobs
+            .iter()
+            .find(|job| job.id == id)
+            .and_then(|job| job.output.clone())
     }
 
     pub fn unfinished_count(&self) -> usize {
@@ -210,6 +220,7 @@ pub fn enqueue(app: &AppHandle, items: Vec<NewJob>) {
                 size: None,
                 error: None,
                 directory: directory.clone(),
+                output: None,
             });
         }
     }
@@ -308,7 +319,7 @@ async fn run(app: AppHandle, job: Job) {
     pump(&app);
 }
 
-async fn transfer(app: &AppHandle, job: &Job) -> Result<u64, String> {
+async fn transfer(app: &AppHandle, job: &Job) -> Result<(u64, PathBuf), String> {
     let working_dir = job.working_dir();
     fs::create_dir_all(&working_dir).map_err(|error| error.to_string())?;
     let (mut child, tree) = ytdlp::spawn(app, |args| {
@@ -396,7 +407,7 @@ async fn collect_text(stream: impl AsyncRead + Unpin) -> String {
     }
 }
 
-fn settle(app: &AppHandle, finished: &Job, outcome: Result<u64, String>) {
+fn settle(app: &AppHandle, finished: &Job, outcome: Result<(u64, PathBuf), String>) {
     let queue = app.state::<Queue>();
     let mut inner = queue.lock();
     inner.trees.remove(&finished.id);
@@ -411,10 +422,11 @@ fn settle(app: &AppHandle, finished: &Job, outcome: Result<u64, String>) {
         let _ = fs::remove_dir_all(job.working_dir());
     } else {
         match outcome {
-            Ok(size) => {
+            Ok((size, output)) => {
                 job.status = Status::Done;
                 job.progress = 1.0;
                 job.size = Some(size);
+                job.output = Some(output);
             }
             Err(error) => {
                 job.status = Status::Failed;
@@ -427,25 +439,22 @@ fn settle(app: &AppHandle, finished: &Job, outcome: Result<u64, String>) {
     emit_job(app, &job);
 }
 
-fn deliver(working_dir: &Path, destination: &Path) -> io::Result<u64> {
-    let mut delivered = 0;
+fn deliver(working_dir: &Path, destination: &Path) -> io::Result<(u64, PathBuf)> {
+    let mut delivered = None;
     let mut total_size = 0;
     for entry in fs::read_dir(working_dir)? {
         let entry = entry?;
         if entry.file_type()?.is_file() {
             total_size += entry.metadata()?.len();
-            move_without_overwriting(&entry.path(), destination)?;
-            delivered += 1;
+            delivered = Some(move_without_overwriting(&entry.path(), destination)?);
         }
     }
-    if delivered == 0 {
-        return Err(io::Error::other("yt-dlp finished without creating a file"));
-    }
+    let output = delivered.ok_or_else(|| io::Error::other("yt-dlp finished without creating a file"))?;
     fs::remove_dir_all(working_dir)?;
-    Ok(total_size)
+    Ok((total_size, output))
 }
 
-fn move_without_overwriting(source: &Path, destination: &Path) -> io::Result<()> {
+fn move_without_overwriting(source: &Path, destination: &Path) -> io::Result<PathBuf> {
     let stem = source.file_stem().unwrap_or_default().to_string_lossy();
     let extension = source
         .extension()
@@ -459,7 +468,7 @@ fn move_without_overwriting(source: &Path, destination: &Path) -> io::Result<()>
         };
         let target = destination.join(name);
         match OpenOptions::new().write(true).create_new(true).open(&target) {
-            Ok(_) => return fs::rename(source, target),
+            Ok(_) => return fs::rename(source, &target).map(|()| target),
             Err(error) if error.kind() == ErrorKind::AlreadyExists => attempt += 1,
             Err(error) => return Err(error),
         }
