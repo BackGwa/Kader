@@ -112,7 +112,6 @@ pub struct Transfer {
     pub total_bytes: Option<f64>,
     pub total_bytes_estimate: Option<f64>,
     pub speed: Option<f64>,
-    pub eta: Option<f64>,
     pub filename: Option<String>,
     pub fragment_index: Option<f64>,
     pub fragment_count: Option<f64>,

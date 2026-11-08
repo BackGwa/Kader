@@ -67,7 +67,6 @@ export type Job = {
   status: JobStatus;
   progress: number;
   speed: number | null;
-  eta: number | null;
   size: number | null;
   error: string | null;
 };

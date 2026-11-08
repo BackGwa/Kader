@@ -22,13 +22,13 @@ export function qualityLabel(format: Format, value: number | null) {
   if (value === null) {
     return t("best");
   }
-  return isVideoFormat(format) ? `${value}p` : `${value}kbps`;
+  return isVideoFormat(format) ? `${value}p` : `${value} kbps`;
 }
 
 export function formatBytes(bytes: number) {
   const unit = Math.min(Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(1024)), BYTE_UNITS.length - 1);
   const amount = bytes / 1024 ** unit;
-  return `${amount.toFixed(unit < 2 ? 0 : 1)}${BYTE_UNITS[unit]}`;
+  return `${amount.toFixed(unit < 2 ? 0 : 1)} ${BYTE_UNITS[unit]}`;
 }
 
 export function formatDuration(seconds: number) {
@@ -39,4 +39,13 @@ export function formatDuration(seconds: number) {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
     : `${minutes}:${remainder}`;
+}
+
+export function linkFrom(text: string) {
+  try {
+    const url = new URL(text.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }

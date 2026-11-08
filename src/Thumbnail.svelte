@@ -1,17 +1,28 @@
 <script lang="ts">
-  import { Music, Play } from "@lucide/svelte";
-
-  let { src, audio = false }: { src: string | null; audio?: boolean } = $props();
+  let { src, width = 80 }: { src: string | null; width?: number } = $props();
 
   let failed = $state(false);
 </script>
 
-<div class="thumbnail">
+<div class="thumbnail" style:width={`${width}px`}>
   {#if src && !failed}
     <img {src} alt="" loading="lazy" referrerpolicy="no-referrer" onerror={() => (failed = true)} />
-  {:else if audio}
-    <Music size={20} aria-hidden="true" />
-  {:else}
-    <Play size={20} aria-hidden="true" />
   {/if}
 </div>
+
+<style>
+  .thumbnail {
+    flex: none;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: var(--field);
+  }
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+</style>

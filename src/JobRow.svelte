@@ -1,117 +1,139 @@
 <script lang="ts">
-  import { CircleAlert, CircleCheck, RotateCw, Trash2, X } from "@lucide/svelte";
+  import { Check, RotateCw, Trash2, X } from "@lucide/svelte";
   import { cancelJob, removeJob, retryJob, type Job } from "./api";
-  import { formatBytes, formatDuration, formatName, isVideoFormat } from "./format";
+  import { formatBytes, formatName } from "./format";
   import { t } from "./i18n";
   import Thumbnail from "./Thumbnail.svelte";
 
   let { job }: { job: Job } = $props();
 
-  const running = $derived(job.status === "fetching" || job.status === "downloading" || job.status === "processing");
-  const cancellable = $derived(running || job.status === "queued");
+  const downloading = $derived(job.status === "downloading");
+  const cancellable = $derived(job.status === "queued" || job.status === "fetching" || downloading || job.status === "processing");
   const retryable = $derived(job.status === "failed" || job.status === "cancelled");
   const removable = $derived(retryable || job.status === "done");
   const percent = $derived(Math.round(job.progress * 100));
-  const details = $derived.by(() => {
-    const parts = [formatName(job.selection.format), job.label];
-    if (job.size !== null) {
-      parts.push(formatBytes(job.size));
+  const details = $derived(
+    [formatName(job.selection.format), job.label, job.size === null ? null : formatBytes(job.size)]
+      .filter(Boolean)
+      .join(" · "),
+  );
+  const state = $derived.by(() => {
+    if (downloading) {
+      return job.speed === null ? `${percent}%` : `${percent}% · ${formatBytes(job.speed)}/s`;
     }
-    if (job.status === "downloading") {
-      parts.push(`${percent}%`);
-      if (job.speed !== null) {
-        parts.push(`${formatBytes(job.speed)}/s`);
-      }
-      if (job.eta !== null) {
-        parts.push(t("remaining", { time: formatDuration(job.eta) }));
-      }
-    } else {
-      parts.push(t(`status_${job.status}`));
-    }
-    return parts.join(" · ");
+    return t(`status_${job.status}`);
   });
 </script>
 
-<li class="row">
-  <Thumbnail src={job.thumbnail} audio={!isVideoFormat(job.selection.format)} />
+<li>
+  <Thumbnail src={job.thumbnail} />
+
   <div class="content">
-    <div class="title truncate">{job.title}</div>
-    {#if running}
-      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}>
+    <div class="truncate name" title={job.title}>{job.title}</div>
+    {#if job.status === "failed" && job.error}
+      <div class="small muted truncate selectable" title={job.error}>{job.error}</div>
+    {:else}
+      <div class="small muted truncate">{details}</div>
+    {/if}
+    {#if downloading}
+      <div class="track" role="progressbar" aria-label={job.title} aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}>
         <div class="fill" style:width={`${percent}%`}></div>
       </div>
     {/if}
-    {#if job.status === "failed"}
-      <div class="muted danger line selectable">
-        <CircleAlert size={14} aria-hidden="true" />
-        <span class="truncate" title={job.error ?? undefined}>{t("status_failed")} · {job.error}</span>
-      </div>
-    {:else}
-      <div class="muted line">
-        {#if job.status === "done"}
-          <CircleCheck size={14} aria-hidden="true" />
-        {/if}
-        <span class="truncate">{details}</span>
-      </div>
-    {/if}
   </div>
-  <div class="actions">
-    {#if retryable}
-      <button class="icon-button" title={t("retry")} aria-label={t("retry")} onclick={() => retryJob(job.id)}>
-        <RotateCw size={17} aria-hidden="true" />
-      </button>
-    {/if}
-    {#if cancellable}
-      <button class="icon-button" title={t("cancelDownload")} aria-label={t("cancelDownload")} onclick={() => cancelJob(job.id)}>
-        <X size={17} aria-hidden="true" />
-      </button>
-    {/if}
-    {#if removable}
-      <button class="icon-button" title={t("remove")} aria-label={t("remove")} onclick={() => removeJob(job.id)}>
-        <Trash2 size={17} aria-hidden="true" />
-      </button>
-    {/if}
+
+  <div class="trailing">
+    <div class="state small muted tabular">
+      {#if job.status === "done"}
+        <Check size={16} aria-label={state} />
+      {:else}
+        {state}
+      {/if}
+    </div>
+    <div class="actions">
+      {#if retryable}
+        <button class="icon-button" title={t("retry")} aria-label={t("retry")} onclick={() => retryJob(job.id)}>
+          <RotateCw size={16} aria-hidden="true" />
+        </button>
+      {/if}
+      {#if cancellable}
+        <button class="icon-button" title={t("cancelDownload")} aria-label={t("cancelDownload")} onclick={() => cancelJob(job.id)}>
+          <X size={16} aria-hidden="true" />
+        </button>
+      {/if}
+      {#if removable}
+        <button class="icon-button" title={t("remove")} aria-label={t("remove")} onclick={() => removeJob(job.id)}>
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      {/if}
+    </div>
   </div>
 </li>
 
 <style>
-  .row {
-    display: flex;
+  li {
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr) 128px;
+    gap: var(--space-3);
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
+    min-height: 64px;
+    padding: var(--space-2) 0;
   }
 
   .content {
-    flex: 1;
     min-width: 0;
   }
 
-  .line {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 2px;
+  .name {
+    font-weight: var(--weight-medium);
   }
 
-  .bar {
-    height: 3px;
-    margin-top: 6px;
+  .track {
+    height: 2px;
+    margin-top: var(--space-2);
     overflow: hidden;
-    border-radius: 2px;
-    background: var(--border);
+    background: var(--track);
   }
 
   .fill {
     height: 100%;
-    background: var(--accent);
-    transition: width 0.2s linear;
+    background: var(--fg);
+    transition: width 0.25s linear;
+  }
+
+  .trailing {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: var(--control-height);
+  }
+
+  .state {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
   }
 
   .actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: none;
+  }
+
+  li:hover .actions,
+  .actions:focus-within {
     display: flex;
-    flex: none;
-    gap: 2px;
+  }
+
+  li:hover .state {
+    visibility: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fill {
+      transition: none;
+    }
   }
 </style>

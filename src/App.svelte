@@ -1,177 +1,146 @@
 <script lang="ts">
-  import { Link, LoaderCircle, Plus, Settings as SettingsIcon, X } from "@lucide/svelte";
+  import { Settings as SettingsIcon } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { readText } from "@tauri-apps/plugin-clipboard-manager";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
-  import AddDialog from "./AddDialog.svelte";
   import { cancelProbe, confirmQuit, newToken, probe, type PlaylistInfo, type VideoInfo } from "./api";
-  import Dialog from "./Dialog.svelte";
+  import { linkFrom } from "./format";
+  import { t } from "./i18n";
   import JobRow from "./JobRow.svelte";
   import { jobs } from "./jobs.svelte";
-  import { t } from "./i18n";
-  import PlaylistPicker from "./PlaylistPicker.svelte";
+  import LinkField from "./LinkField.svelte";
+  import PlaylistDialog from "./PlaylistDialog.svelte";
   import Settings from "./Settings.svelte";
+  import VideoDialog from "./VideoDialog.svelte";
 
-  type Modal =
-    | { kind: "none" }
+  type Stage =
+    | { kind: "idle" }
     | { kind: "analyzing"; token: number }
     | { kind: "video"; info: VideoInfo }
-    | { kind: "playlist"; info: PlaylistInfo }
-    | { kind: "settings" }
-    | { kind: "quit"; count: number };
+    | { kind: "playlist"; info: PlaylistInfo };
 
-  const NO_MODAL: Modal = { kind: "none" };
-  const SHORTCUT = navigator.platform.startsWith("Mac") ? "⌘V" : "Ctrl+V";
+  const IDLE: Stage = { kind: "idle" };
 
-  let modal = $state<Modal>(NO_MODAL);
+  let stage = $state<Stage>(IDLE);
+  let link = $state("");
   let notice = $state<string | null>(null);
+  let settingsOpen = $state(false);
+  let field: LinkField;
+  let quitPromptOpen = false;
 
   onMount(() => {
-    const stops = [
-      jobs.connect(),
-      listen<number>("quit-requested", (event) => {
-        modal = { kind: "quit", count: event.payload };
-      }),
-    ];
+    field.focus();
+    const stops = [jobs.connect(), listen<number>("quit-requested", (event) => promptQuit(event.payload))];
     return () => {
       stops.forEach((stop) => stop.then((unlisten) => unlisten()));
     };
   });
 
-  function linkFrom(text: string) {
-    try {
-      const url = new URL(text.trim());
-      return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function clipboardLink() {
-    try {
-      return linkFrom(await readText());
-    } catch {
-      return null;
-    }
-  }
-
-  async function pasteLink() {
-    notice = null;
-    const url = await clipboardLink();
-    if (!url) {
-      notice = t("noLink");
+  async function promptQuit(count: number) {
+    if (quitPromptOpen) {
       return;
     }
+    quitPromptOpen = true;
+    const confirmed = await ask(t("quitBody", { count }), {
+      title: t("quitTitle"),
+      kind: "warning",
+      okLabel: t("quitConfirm"),
+      cancelLabel: t("quitKeep"),
+    });
+    quitPromptOpen = false;
+    if (confirmed) {
+      confirmQuit();
+    }
+  }
+
+  function stopAnalysis() {
+    if (stage.kind === "analyzing") {
+      cancelProbe(stage.token);
+    }
+  }
+
+  async function analyze(text: string) {
+    const url = linkFrom(text);
+    if (!url) {
+      notice = t("notLink");
+      return;
+    }
+    stopAnalysis();
+    notice = null;
     const token = newToken();
-    modal = { kind: "analyzing", token };
-    const isCurrent = () => modal.kind === "analyzing" && modal.token === token;
+    stage = { kind: "analyzing", token };
+    const isCurrent = () => stage.kind === "analyzing" && stage.token === token;
     try {
       const info = await probe(token, url);
       if (!isCurrent()) {
         return;
       }
       if (info.kind === "video") {
-        modal = { kind: "video", info };
+        stage = { kind: "video", info };
       } else if (info.entries.length > 0) {
-        modal = { kind: "playlist", info };
+        stage = { kind: "playlist", info };
       } else {
-        modal = NO_MODAL;
+        stage = IDLE;
         notice = t("emptyPlaylist");
       }
     } catch (error) {
       if (isCurrent()) {
-        modal = NO_MODAL;
+        stage = IDLE;
         notice = String(error);
       }
     }
   }
 
-  function cancelAnalysis() {
-    if (modal.kind === "analyzing") {
-      cancelProbe(modal.token);
-      modal = NO_MODAL;
-    }
+  function reset() {
+    stopAnalysis();
+    stage = IDLE;
+    link = "";
+    notice = null;
+    field.focus();
   }
 
-  function closeModal() {
-    modal = NO_MODAL;
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    const isPaste = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v";
-    if (isPaste && modal.kind === "none") {
-      event.preventDefault();
-      pasteLink();
+  function handleWindowKeydown(event: KeyboardEvent) {
+    const typing = event.target instanceof HTMLInputElement && event.target.type === "text";
+    const dialogOpen = stage.kind === "video" || stage.kind === "playlist" || settingsOpen;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v" && !typing && !dialogOpen) {
+      field.focus();
     }
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <main>
-  <header>
-    <button class="button primary" onclick={pasteLink}>
-      <Plus size={16} aria-hidden="true" />
-      {t("pasteLink")}
-    </button>
-    <button class="icon-button" title={t("settings")} aria-label={t("settings")} onclick={() => (modal = { kind: "settings" })}>
-      <SettingsIcon size={18} aria-hidden="true" />
+  <header data-tauri-drag-region>
+    <LinkField bind:this={field} bind:value={link} busy={stage.kind === "analyzing"} onanalyze={analyze} onclear={reset} />
+    <button class="icon-button" title={t("settings")} aria-label={t("settings")} onclick={() => (settingsOpen = true)}>
+      <SettingsIcon size={16} aria-hidden="true" />
     </button>
   </header>
 
   {#if notice}
-    <div class="notice" role="status">
-      <span class="selectable">{notice}</span>
-      <button class="icon-button" aria-label={t("close")} onclick={() => (notice = null)}>
-        <X size={16} aria-hidden="true" />
-      </button>
-    </div>
+    <p class="small selectable" role="status">{notice}</p>
   {/if}
 
-  {#if jobs.list.length > 0}
-    <ul>
-      {#each jobs.list as job (job.id)}
-        <JobRow {job} />
-      {/each}
-    </ul>
-  {:else}
-    <div class="empty">
-      <Link size={32} aria-hidden="true" />
-      <div class="title">{t("emptyTitle")}</div>
-      <div class="muted">{t("emptyHint", { shortcut: SHORTCUT })}</div>
-    </div>
-  {/if}
+  <ul>
+    {#each jobs.list as job (job.id)}
+      <JobRow {job} />
+    {/each}
+  </ul>
 </main>
 
-{#if modal.kind === "analyzing"}
-  <Dialog label={t("analyzing")} onclose={cancelAnalysis}>
-    <div class="dialog-body">
-      <div class="analyzing" role="status">
-        <LoaderCircle class="spin" size={18} aria-hidden="true" />
-        {t("analyzing")}
-      </div>
-      <div class="dialog-actions">
-        <button class="button" onclick={cancelAnalysis}>{t("cancel")}</button>
-      </div>
-    </div>
-  </Dialog>
-{:else if modal.kind === "video"}
-  <AddDialog info={modal.info} onclose={closeModal} />
-{:else if modal.kind === "playlist"}
-  <PlaylistPicker info={modal.info} onclose={closeModal} />
-{:else if modal.kind === "settings"}
-  <Settings onclose={closeModal} />
-{:else if modal.kind === "quit"}
-  <Dialog label={t("quitTitle")} onclose={closeModal}>
-    <div class="dialog-body">
-      <div class="title">{t("quitTitle")}</div>
-      <div>{t("quitBody", { count: modal.count })}</div>
-      <div class="dialog-actions">
-        <button class="button" onclick={closeModal}>{t("quitKeep")}</button>
-        <button class="button primary" onclick={confirmQuit}>{t("quitConfirm")}</button>
-      </div>
-    </div>
-  </Dialog>
+{#if stage.kind === "video"}
+  {#key stage.info}
+    <VideoDialog info={stage.info} onclose={reset} />
+  {/key}
+{:else if stage.kind === "playlist"}
+  {#key stage.info}
+    <PlaylistDialog info={stage.info} onclose={reset} />
+  {/key}
+{/if}
+
+{#if settingsOpen}
+  <Settings onclose={() => (settingsOpen = false)} />
 {/if}
 
 <style>
@@ -185,59 +154,25 @@
     display: flex;
     flex: none;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
+    gap: var(--space-2);
+    height: 56px;
+    padding: 0 var(--space-5);
   }
 
-  .notice {
-    display: flex;
+  :global(.mac) header {
+    padding-left: 88px;
+  }
+
+  p {
     flex: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 4px 8px 4px 14px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    margin: 0;
+    padding: 0 var(--space-5) var(--space-3);
   }
 
   ul {
     flex: 1;
-    margin: 0;
-    padding: 0;
+    min-height: 0;
+    padding: 0 var(--space-5);
     overflow-y: auto;
-    list-style: none;
-  }
-
-  .empty {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    color: var(--text-muted);
-  }
-
-  .empty .title {
-    color: var(--text);
-    margin-top: 8px;
-  }
-
-  .analyzing {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 34px;
-  }
-
-  .analyzing :global(.spin) {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 </style>

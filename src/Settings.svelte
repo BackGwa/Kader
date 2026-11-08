@@ -5,6 +5,7 @@
   import { engineStatus, getSettings, setConcurrency, setSaveDir, type EngineStatus, type Settings } from "./api";
   import Dialog from "./Dialog.svelte";
   import { t } from "./i18n";
+  import Select from "./Select.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -12,7 +13,9 @@
 
   let settings = $state<Settings | null>(null);
   let engine = $state<EngineStatus | null>(null);
-  let saveError = $state<string | null>(null);
+  let failure = $state<string | null>(null);
+
+  const engineProblem = $derived(engine?.state === "failed" || engine?.state === "restored");
 
   onMount(() => {
     getSettings().then((values) => (settings = values));
@@ -23,29 +26,26 @@
     };
   });
 
-  async function save(action: () => Promise<void>) {
-    saveError = null;
+  async function apply(action: () => Promise<void>) {
+    failure = null;
     try {
       await action();
     } catch (error) {
-      saveError = String(error);
+      failure = String(error);
     }
   }
 
-  function changeConcurrency(event: Event) {
-    const concurrency = Number((event.currentTarget as HTMLSelectElement).value);
-    save(async () => {
-      await setConcurrency(concurrency);
-      if (settings) {
-        settings.concurrency = concurrency;
-      }
-    });
+  function changeConcurrency() {
+    const concurrency = settings?.concurrency;
+    if (concurrency !== undefined) {
+      apply(() => setConcurrency(concurrency));
+    }
   }
 
   async function changeFolder() {
     const saveDir = await openFolderPicker({ directory: true, defaultPath: settings?.saveDir });
     if (typeof saveDir === "string") {
-      save(async () => {
+      apply(async () => {
         await setSaveDir(saveDir);
         if (settings) {
           settings.saveDir = saveDir;
@@ -56,55 +56,60 @@
 </script>
 
 <Dialog label={t("settings")} {onclose}>
-  <div class="dialog-body">
+  <div class="layout">
     <div class="title">{t("settings")}</div>
 
     {#if settings}
-      <label class="setting">
+      <div class="row">
         <span>{t("concurrency")}</span>
-        <select value={settings.concurrency} onchange={changeConcurrency}>
+        <Select bind:value={settings.concurrency} label={t("concurrency")} width={72} onchange={changeConcurrency}>
           {#each CONCURRENCY_CHOICES as choice (choice)}
             <option value={choice}>{choice}</option>
           {/each}
-        </select>
-      </label>
+        </Select>
+      </div>
 
-      <div class="setting">
+      <div class="row">
         <div class="folder">
           <div>{t("saveFolder")}</div>
-          <div class="muted truncate" title={settings.saveDir}>{settings.saveDir}</div>
+          <div class="small muted truncate selectable" title={settings.saveDir}>{settings.saveDir}</div>
         </div>
-        <button type="button" class="button" onclick={changeFolder}>{t("change")}</button>
+        <button type="button" class="secondary" onclick={changeFolder}>{t("change")}</button>
       </div>
     {/if}
 
-    {#if saveError}
-      <div class="muted danger selectable">{saveError}</div>
+    {#if failure}
+      <div class="small selectable">{failure}</div>
     {/if}
-
-    {#if engine}
-      <div class="setting">
-        <span>{t("engine")}</span>
-        <span class="muted" class:danger={engine.state === "failed"}>{t(`engine_${engine.state}`)}</span>
+    {#if engine && engineProblem}
+      <div class="small selectable" title={engine.detail ?? undefined}>
+        {t(engine.state === "failed" ? "engine_failed" : "engine_restored")}
       </div>
-      {#if engine.detail}
-        <div class="muted danger selectable">{engine.detail}</div>
-      {/if}
     {/if}
 
     <div class="dialog-actions">
-      <button type="button" class="button" onclick={onclose}>{t("close")}</button>
+      <button type="button" class="primary" onclick={onclose}>{t("close")}</button>
     </div>
   </div>
 </Dialog>
 
 <style>
-  .setting {
+  .layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+  }
+
+  .layout > .title {
+    font-size: var(--text-lg);
+  }
+
+  .row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    min-height: 34px;
+    gap: var(--space-4);
   }
 
   .folder {

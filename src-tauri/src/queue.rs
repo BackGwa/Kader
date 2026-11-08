@@ -63,7 +63,6 @@ pub struct Job {
     status: Status,
     progress: f64,
     speed: Option<f64>,
-    eta: Option<f64>,
     size: Option<u64>,
     error: Option<String>,
     #[serde(skip)]
@@ -208,7 +207,6 @@ pub fn enqueue(app: &AppHandle, items: Vec<NewJob>) {
                 status: Status::Queued,
                 progress: 0.0,
                 speed: None,
-                eta: None,
                 size: None,
                 error: None,
                 directory: directory.clone(),
@@ -255,7 +253,6 @@ pub fn retry(app: &AppHandle, id: u64) {
         job.status = Status::Queued;
         job.progress = 0.0;
         job.speed = None;
-        job.eta = None;
         job.error = None;
         inner.jobs.push(job);
     }
@@ -374,13 +371,11 @@ fn apply_progress(app: &AppHandle, id: u64, tracker: &mut Tracker, progress: Pro
             job.status = Status::Downloading;
             job.progress = job.progress.max(fraction);
             job.speed = transfer.speed;
-            job.eta = transfer.eta;
             job.size = size.or(job.size);
         }
         ProgressLine::Processing => {
             job.status = Status::Processing;
             job.speed = None;
-            job.eta = None;
         }
     }
     let job = job.clone();
@@ -409,7 +404,6 @@ fn settle(app: &AppHandle, finished: &Job, outcome: Result<u64, String>) {
         return;
     };
     job.speed = None;
-    job.eta = None;
     if job.status == Status::Cancelled || job.status == Status::Cancelling {
         job.status = Status::Cancelled;
         job.progress = 0.0;

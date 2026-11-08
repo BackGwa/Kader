@@ -16,6 +16,8 @@
   import { formatDuration, formatName, qualityLabel } from "./format";
   import { t } from "./i18n";
   import QualityMenu from "./QualityMenu.svelte";
+  import Select from "./Select.svelte";
+  import Thumbnail from "./Thumbnail.svelte";
 
   type Row = {
     entry: PlaylistEntry;
@@ -51,6 +53,12 @@
   const selectedRows = $derived(rows.filter((row) => row.selected));
   const allSelected = $derived(selectedRows.length === rows.length);
 
+  let downloadButton = $state<HTMLButtonElement>();
+
+  $effect(() => {
+    downloadButton?.focus();
+  });
+
   onDestroy(() => {
     rows.forEach((row) => {
       if (row.token !== null) {
@@ -59,16 +67,18 @@
     });
   });
 
-  function setFormat(row: Row, format: Format) {
-    row.format = format;
-    const stillOffered = row.options?.[format]?.some((quality) => quality.value === row.quality);
+  function reconcileQuality(row: Row) {
+    const stillOffered = row.options?.[row.format]?.some((quality) => quality.value === row.quality);
     if (!stillOffered) {
       row.quality = null;
     }
   }
 
   function applySharedFormat() {
-    rows.forEach((row) => setFormat(row, sharedFormat));
+    rows.forEach((row) => {
+      row.format = sharedFormat;
+      reconcileQuality(row);
+    });
   }
 
   function toggleAll() {
@@ -99,7 +109,7 @@
     }
   }
 
-  async function addSelected() {
+  async function download() {
     await enqueue(
       selectedRows.map((row) => ({
         url: row.entry.url,
@@ -114,47 +124,30 @@
 </script>
 
 <Dialog label={info.title} wide {onclose}>
-  <div class="dialog-body">
-    <div class="header">
-      <div class="summary">
-        <div class="title truncate" title={info.title}>{info.title}</div>
-        <div class="muted">{t("playlistCount", { selected: selectedRows.length, total: rows.length })}</div>
-      </div>
-      <label class="shared">
-        <span class="muted">{t("allFormats")}</span>
-        <select bind:value={sharedFormat} onchange={applySharedFormat}>
-          {#each FORMATS as format (format)}
-            <option value={format}>{formatName(format)}</option>
-          {/each}
-        </select>
-      </label>
-    </div>
+  <div class="layout">
+    <header>
+      <div class="title truncate" title={info.title}>{info.title}</div>
+      <Select bind:value={sharedFormat} label={t("format")} width={92} onchange={applySharedFormat}>
+        {#each FORMATS as format (format)}
+          <option value={format}>{formatName(format)}</option>
+        {/each}
+      </Select>
+    </header>
 
-    <label class="select-all">
-      <input type="checkbox" checked={allSelected} onchange={toggleAll} />
-      <span>{t("selectAll")}</span>
-    </label>
-
-    <ul class="rows">
+    <ul>
       {#each rows as row, index (index)}
-        <li class="row">
+        <li>
           <input type="checkbox" aria-label={row.entry.title} bind:checked={row.selected} />
-          <div class="name truncate" class:muted={!row.selected} title={row.entry.title}>
-            {index + 1}. {row.entry.title}
-          </div>
-          {#if row.entry.duration !== null}
-            <span class="muted">{formatDuration(row.entry.duration)}</span>
-          {/if}
-          <select
-            class="format"
-            aria-label={t("format")}
-            value={row.format}
-            onchange={(event) => setFormat(row, event.currentTarget.value as Format)}
-          >
+          <Thumbnail src={row.entry.thumbnail} width={64} />
+          <div class="truncate" title={row.entry.title}>{row.entry.title}</div>
+          <span class="small muted tabular duration">
+            {row.entry.duration === null ? "" : formatDuration(row.entry.duration)}
+          </span>
+          <Select bind:value={row.format} label={t("format")} width={92} onchange={() => reconcileQuality(row)}>
             {#each FORMATS as format (format)}
               <option value={format}>{formatName(format)}</option>
             {/each}
-          </select>
+          </Select>
           <QualityMenu
             format={row.format}
             value={row.quality}
@@ -168,78 +161,70 @@
       {/each}
     </ul>
 
-    <div class="dialog-actions">
-      <button type="button" class="button" onclick={onclose}>{t("cancel")}</button>
-      <button type="button" class="button primary" disabled={selectedRows.length === 0} onclick={addSelected}>
-        {t("addSelected", { count: selectedRows.length })}
-      </button>
-    </div>
+    <footer>
+      <label>
+        <input type="checkbox" checked={allSelected} onchange={toggleAll} />
+        <span>{t("selectAll")}</span>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" onclick={onclose}>{t("cancel")}</button>
+        <button bind:this={downloadButton} type="button" class="primary tabular" disabled={selectedRows.length === 0} onclick={download}>
+          {t("download")} {selectedRows.length}
+        </button>
+      </div>
+    </footer>
   </div>
 </Dialog>
 
 <style>
-  .header {
+  .layout {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-height: calc(100vh - 50px);
+    padding: var(--space-5);
   }
 
-  .summary {
+  header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  header .title {
     flex: 1;
     min-width: 0;
+    font-size: var(--text-lg);
   }
 
-  .shared {
-    display: flex;
-    flex: none;
+  ul {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  li {
+    display: grid;
+    grid-template-columns: 15px 64px minmax(0, 1fr) 44px 92px 104px;
+    gap: var(--space-3);
     align-items: center;
-    gap: 8px;
+    height: 52px;
   }
 
-  .select-all {
+  .duration {
+    text-align: right;
+  }
+
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  label {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    align-self: flex-start;
-    cursor: pointer;
-  }
-
-  .rows {
-    max-height: min(360px, calc(100vh - 240px));
-    margin: 0;
-    padding: 0;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    list-style: none;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 44px;
-    padding: 4px 10px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .row:last-child {
-    border-bottom: 0;
-  }
-
-  .name {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .format {
-    flex: none;
-    width: 82px;
-  }
-
-  input {
-    flex: none;
-    margin: 0;
-    accent-color: var(--accent);
+    gap: var(--space-2);
   }
 </style>
