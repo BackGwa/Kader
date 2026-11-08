@@ -111,7 +111,7 @@
 <svelte:window onkeydown={handleWindowKeydown} />
 
 <main>
-  <header data-tauri-drag-region>
+  <header>
     <LinkField bind:this={field} bind:value={link} busy={stage.kind === "analyzing"} onanalyze={analyze} onclear={reset} />
     <button class="icon-button" title={t("settings")} aria-label={t("settings")} onclick={() => (settingsOpen = true)}>
       <SettingsIcon size={16} aria-hidden="true" />
@@ -157,10 +157,6 @@
     gap: var(--space-2);
     height: 56px;
     padding: 0 var(--space-5);
-  }
-
-  :global(.mac) header {
-    padding-left: 88px;
   }
 
   p {

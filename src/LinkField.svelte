@@ -1,6 +1,5 @@
 <script lang="ts">
   import { ArrowRight, Link, LoaderCircle, X } from "@lucide/svelte";
-  import { linkFrom } from "./format";
   import { t } from "./i18n";
 
   let {
@@ -19,15 +18,6 @@
 
   export function focus() {
     input.focus();
-  }
-
-  function handlePaste(event: ClipboardEvent) {
-    const text = event.clipboardData?.getData("text") ?? "";
-    if (linkFrom(text)) {
-      event.preventDefault();
-      value = text.trim();
-      onanalyze(value);
-    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -55,7 +45,6 @@
     autocomplete="off"
     autocapitalize="off"
     spellcheck="false"
-    onpaste={handlePaste}
     onkeydown={handleKeydown}
   />
   {#if busy}
