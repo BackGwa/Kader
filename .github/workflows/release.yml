@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest
+            installer: src-tauri/target/release/bundle/nsis/*-setup.exe
+          - runner: macos-latest
+            installer: src-tauri/target/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - name: Build installer with the tag version
+        shell: bash
+        run: |
+          echo "{\"version\":\"${GITHUB_REF_NAME#v}\"}" > "$RUNNER_TEMP/release.conf.json"
+          pnpm tauri build --config "$RUNNER_TEMP/release.conf.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.runner }}
+          path: ${{ matrix.installer }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: installers
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" installers/* --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
